@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#ffffff">
-  <title>KEVIN OS | Application Hub v3.2</title>
+  <title>KEVIN OS | Application Hub v3.3</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -171,6 +171,12 @@ body::before{inset:67px 0 0;background-size:36px 36px;opacity:.5}
  .card-edit{padding:2px}.card-edit svg{width:12px;height:12px}
 }
 @media(max-width:330px){.cover{aspect-ratio:1.9}}
+/* Vista pública por defecto; Ctrl+O habilita el panel de edición */
+body:not(.edit-mode) [data-admin-only]{display:none!important}
+.edit-status{display:none;align-items:center;gap:7px;white-space:nowrap;color:#373c45;background:#edf0f3;border:1px solid #d9dee5;border-radius:8px;padding:8px 10px;font-size:10px;font-weight:800;letter-spacing:.07em}
+.edit-status::before{content:"";width:7px;height:7px;background:#2c9269;border-radius:50%;box-shadow:0 0 0 3px #2c926917}
+body.edit-mode .edit-status{display:inline-flex}
+@media(max-width:750px){.edit-status{padding:8px}.edit-status-label{display:none}}
 </style>
 </head>
 <body>
@@ -186,9 +192,10 @@ body::before{inset:67px 0 0;background-size:36px 36px;opacity:.5}
         <kbd>Ctrl K</kbd>
       </label>
       <div class="top-actions">
-        <button type="button" class="btn" id="newCategoryBtn" aria-label="Nueva categoría"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><span class="desktop-label">Categoría</span></button>
-        <button type="button" class="btn primary" id="newAppBtn" aria-label="Nueva web"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><span class="desktop-label">Nueva web</span></button>
-        <button type="button" class="icon-btn" id="backupBtn" title="Respaldo de datos" aria-label="Respaldo de datos"><svg viewBox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 17v3h14v-3"/></svg></button>
+        <span class="edit-status" id="editStatus" aria-live="polite" title="Modo edición habilitado"><span class="edit-status-label">EDICIÓN ACTIVADA</span><span class="edit-status-label" style="opacity:.6">· Ctrl+O</span></span>
+        <button type="button" class="btn" id="newCategoryBtn" data-admin-only aria-label="Nueva categoría"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><span class="desktop-label">Categoría</span></button>
+        <button type="button" class="btn primary" id="newAppBtn" data-admin-only aria-label="Nueva web"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><span class="desktop-label">Nueva web</span></button>
+        <button type="button" class="icon-btn" id="backupBtn" data-admin-only title="Respaldo de datos" aria-label="Respaldo de datos"><svg viewBox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 17v3h14v-3"/></svg></button>
       </div>
     </div>
   </header>
@@ -196,7 +203,7 @@ body::before{inset:67px 0 0;background-size:36px 36px;opacity:.5}
     <section aria-labelledby="catsHeading">
       <div class="section-head">
         <div class="heading-side"><h1 id="catsHeading">Categorías</h1><span class="count" id="catCount">0</span></div>
-        <button class="section-action" id="manageCategories" type="button">Administrar <svg viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg></button>
+        <button class="section-action" id="manageCategories" data-admin-only type="button">Administrar <svg viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg></button>
       </div>
       <div class="category-grid" id="categoryGrid"></div>
     </section>
@@ -228,6 +235,10 @@ body::before{inset:67px 0 0;background-size:36px 36px;opacity:.5}
     const uid=()=>globalThis.crypto?.randomUUID?.()||String(Date.now())+'-'+Math.random().toString(36).slice(2);
     function load(){try{const o=JSON.parse(localStorage.getItem(KEY));if(o&&Array.isArray(o.categories)&&Array.isArray(o.apps))return {categories:o.categories.filter(c=>typeof c==='string'),apps:o.apps.filter(a=>a&&typeof a==='object'),icons:(o.icons&&typeof o.icons==='object'&&!Array.isArray(o.icons))?o.icons:{}}}catch{}return {categories:[...initialCategories],apps:[],icons:{}}}
     let data=load();let activeCat='Todas',filter='all',search='',sort='recent',toastTimeout;
+    let editMode=false; // No se guarda: cada nueva apertura comienza en modo consulta.
+    function requireEdit(){return editMode;}
+    function toggleEdit(){editMode=!editMode;document.body.classList.toggle('edit-mode',editMode);if(!editMode)closeModal();render();toast(editMode?'Edición habilitada':'Edición desactivada')}
+
     function store(){try{localStorage.setItem(KEY,JSON.stringify(data));return true}catch{toast('No se pudo guardar en este navegador');return false}}
     function toast(message){const el=$('#toast');el.textContent=message;el.classList.remove('hidden');clearTimeout(toastTimeout);toastTimeout=setTimeout(()=>el.classList.add('hidden'),2600)}
     function catIcon(c){return Object.hasOwn(data.icons,c)?String(data.icons[c]??''):''}
@@ -246,17 +257,18 @@ body::before{inset:67px 0 0;background-size:36px 36px;opacity:.5}
         const src=safeHttp(a.image||'');const emoji=String(a.emoji??'').trim();const abbr=String(a.name||'W').trim().split(/\s+/).slice(0,2).map(x=>x[0]||'').join('').toUpperCase();
         return `<article class="app-card" data-id="${esc(a.id)}">
           <div class="cover"><i class="cover-corner" aria-hidden="true"></i>${src?`<img loading="lazy" decoding="async" alt="" src="${esc(src)}">`:''}${emoji?`<span class="cover-emoji">${esc(emoji)}</span>`:`<span class="cover-monogram" aria-hidden="true">${esc(abbr)}</span>`}<span class="cover-open">ABRIR ${svg.arrow}</span></div>
-          <button class="card-fav ${a.favorite?'on':''}" type="button" data-fav="${esc(a.id)}" aria-label="${a.favorite?'Quitar de favoritos':'Agregar a favoritos'}" title="Favorito">${svg.star}</button>
-          <div class="card-info"><div class="card-meta-line"><div class="card-category">${esc(a.category||'Sin categoría')}</div><button type="button" class="card-edit" data-edit="${esc(a.id)}" aria-label="Editar ${esc(a.name)}" title="Editar aplicación">${svg.edit}</button></div><h3 class="card-title" title="${esc(a.name)}">${esc(a.name)}</h3><div class="card-desc" title="${esc(a.description||'')}">${esc(a.description||'')}</div></div>
+          ${editMode?`<button class="card-fav ${a.favorite?'on':''}" type="button" data-fav="${esc(a.id)}" aria-label="${a.favorite?'Quitar de favoritos':'Agregar a favoritos'}" title="Favorito">${svg.star}</button>`:''}
+          <div class="card-info"><div class="card-meta-line"><div class="card-category">${esc(a.category||'Sin categoría')}</div>${editMode?`<button type="button" class="card-edit" data-edit="${esc(a.id)}" aria-label="Editar ${esc(a.name)}" title="Editar aplicación">${svg.edit}</button>`:''}</div><h3 class="card-title" title="${esc(a.name)}">${esc(a.name)}</h3><div class="card-desc" title="${esc(a.description||'')}">${esc(a.description||'')}</div></div>
           <a class="card-launch" data-open="${esc(a.id)}" href="${esc(a.url)}" target="_blank" rel="noopener noreferrer" aria-label="Abrir ${esc(a.name)} en otra pestaña"></a>
           </article>`}).join(''):
-        `<div class="empty"><div class="empty-symbol">${search?'⌕':'▦'}</div><b>${search?'Sin resultados':filter==='favorites'?'No hay favoritos':'No hay aplicaciones'}</b>${!search&&filter!=='favorites'?'<button class="btn primary" id="emptyAdd" type="button">＋ Nueva web</button>':''}</div>`;
+        `<div class="empty"><div class="empty-symbol">${search?'⌕':'▦'}</div><b>${search?'Sin resultados':filter==='favorites'?'No hay favoritos':'No hay aplicaciones'}</b>${editMode&&!search&&filter!=='favorites'?'<button class="btn primary" id="emptyAdd" type="button">＋ Nueva web</button>':''}</div>`;
     }
     function setCategory(c){activeCat=c;render()}
     function closeModal(){const el=$('#modalRoot');el.replaceChildren();document.removeEventListener('keydown',handleEsc);document.body.style.overflow='';}
     function handleEsc(e){if(e.key==='Escape')closeModal()}
     function showModal(title,content){closeModal();$('#modalRoot').innerHTML=`<div class="overlay" id="overlay"><div class="dialog" role="dialog" aria-modal="true" aria-label="${esc(title)}"><div class="dialog-head"><h3>${esc(title)}</h3><button type="button" class="icon-btn" id="modalClose" aria-label="Cerrar">${svg.close}</button></div>${content}</div></div>`;$('#modalClose').onclick=closeModal;$('#overlay').addEventListener('click',e=>{if(e.target.id==='overlay')closeModal()});document.addEventListener('keydown',handleEsc);document.body.style.overflow='hidden';setTimeout(()=>$('#modalRoot input:not([type=file])')?.focus(),20)}
     function openAppEditor(id){
+      if(!requireEdit())return;
       const a=id?data.apps.find(x=>String(x.id)===String(id)):null;
       const opts=data.categories.map(c=>`<option value="${esc(c)}" ${a?.category===c?'selected':''}>${esc(c)}</option>`).join('');
       showModal(a?'Editar web':'Nueva web',`<form id="appForm" class="form">
@@ -284,6 +296,7 @@ body::before{inset:67px 0 0;background-size:36px 36px;opacity:.5}
       document.querySelectorAll('[data-clear-emoji]').forEach(btn=>btn.onclick=()=>{const inp=document.getElementById(btn.dataset.clearEmoji);if(inp){inp.value='';inp.focus()}});
     }
     function categoryManager(){
+      if(!requireEdit())return;
       const list=data.categories.map(c=>`<div class="category-row"><div class="category-row-main">${catIcon(c)?`<span class="em">${esc(catIcon(c))}</span>`:''}<div><strong>${esc(c)}</strong><small>${countOf(c)} ${countOf(c)===1?'web':'webs'}</small></div></div><div class="row-actions"><button type="button" class="icon-btn" data-cat-edit="${esc(c)}" aria-label="Editar ${esc(c)}">${svg.edit}</button><button type="button" class="icon-btn" data-cat-delete="${esc(c)}" aria-label="Eliminar ${esc(c)}">${svg.trash}</button></div></div>`).join('');
       showModal('Categorías',`<form id="newCatForm" class="form category-create"><div class="two"><div class="field"><label for="newCatName">Nombre</label><input id="newCatName" maxlength="48" required placeholder="Nueva categoría"></div><div class="field"><label for="newCatEmoji">Emoji (opcional)</label><div class="emoji-field"><input id="newCatEmoji" maxlength="20" placeholder=""><button type="button" class="emoji-remove" data-clear-emoji="newCatEmoji">Quitar</button></div></div></div><button class="btn primary" type="submit">${svg.plus} Crear categoría</button></form><div class="categories-list">${list}</div>`);
       bindEmojiClear();
@@ -292,11 +305,12 @@ body::before{inset:67px 0 0;background-size:36px 36px;opacity:.5}
       $('#modalRoot').querySelectorAll('[data-cat-delete]').forEach(btn=>btn.onclick=()=>{const name=btn.dataset.catDelete,n=countOf(name);if(!confirm(`¿Eliminar "${name}"?${n?' Sus aplicaciones quedarán en "Sin categoría".':''}`))return;data.categories=data.categories.filter(c=>c!==name);delete data.icons[name];if(n){if(!data.categories.includes('Sin categoría'))data.categories.push('Sin categoría');data.apps.forEach(a=>{if(a.category===name)a.category='Sin categoría'})}if(activeCat===name)activeCat='Todas';if(!data.categories.length)data.categories=['Personal'];if(!store())return;categoryManager();render();toast('Categoría eliminada')});
     }
     function editCategory(old){
+      if(!requireEdit())return;
       showModal('Editar categoría',`<form class="form" id="editCatForm"><div class="field"><label for="editCatName">Nombre</label><input id="editCatName" maxlength="48" required value="${esc(old)}"></div><div class="field"><label for="editCatIcon">Emoji (opcional)</label><div class="emoji-field"><input id="editCatIcon" maxlength="20" value="${esc(catIcon(old))}" placeholder=""><button type="button" class="emoji-remove" data-clear-emoji="editCatIcon">Quitar</button></div></div><div class="form-actions"><button type="button" class="btn" id="backCats">Cancelar</button><button type="submit" class="btn primary">Guardar cambios</button></div></form>`);
       bindEmojiClear();$('#backCats').onclick=categoryManager;
       $('#editCatForm').onsubmit=e=>{e.preventDefault();const next=$('#editCatName').value.trim(),emoji=$('#editCatIcon').value.trim();if(!next)return;if((norm(next)!==norm(old)&&data.categories.some(c=>norm(c)===norm(next)))||norm(next)==='todas'){toast('La categoría ya existe');return}data.categories=data.categories.map(c=>c===old?next:c);data.apps.forEach(a=>{if(a.category===old)a.category=next});if(activeCat===old)activeCat=next;delete data.icons[old];data.icons[next]=emoji;if(!store())return;categoryManager();render();toast('Categoría actualizada')};
     }
-    function backupManager(){showModal('Respaldo de datos',`<div class="backup-grid"><div class="backup-option"><b>Exportar datos</b><button type="button" id="exportBtn" class="btn primary">Exportar JSON</button></div><div class="backup-option"><b>Importar datos</b><input type="file" id="importFile" accept=".json,application/json"></div></div>`);
+    function backupManager(){if(!requireEdit())return;showModal('Respaldo de datos',`<div class="backup-grid"><div class="backup-option"><b>Exportar datos</b><button type="button" id="exportBtn" class="btn primary">Exportar JSON</button></div><div class="backup-option"><b>Importar datos</b><input type="file" id="importFile" accept=".json,application/json"></div></div>`);
       $('#exportBtn').onclick=()=>{const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='kevin-os-respaldo-'+new Date().toISOString().slice(0,10)+'.json';document.body.appendChild(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1200)};
       $('#importFile').onchange=async e=>{const f=e.target.files?.[0];if(!f)return;try{if(f.size>5_000_000)throw Error('Archivo muy grande');const raw=JSON.parse(await f.text());if(!raw||!Array.isArray(raw.apps)||!Array.isArray(raw.categories)||raw.apps.length>5000||raw.categories.length>500||!raw.categories.every(c=>typeof c==='string'&&c.trim().length>0&&c.length<=48)||!raw.apps.every(a=>a&&typeof a.name==='string'&&typeof a.url==='string'&&validUrl(a.url)&&typeof a.category==='string'))throw Error('Datos inválidos');if(!confirm('¿Reemplazar todas las webs y categorías por este respaldo?'))return;const categories=[...new Set(raw.categories)],apps=raw.apps.map(a=>({id:uid(),name:String(a.name).slice(0,100),url:a.url,description:String(a.description||'').slice(0,240),category:a.category,emoji:String(a.emoji??'').slice(0,20),image:safeHttp(a.image||''),favorite:!!a.favorite,lastOpened:Number(a.lastOpened)||0}));for(const a of apps)if(!categories.includes(a.category))categories.push(a.category);data={categories:categories.length?categories:['Personal'],apps,icons:(raw.icons&&typeof raw.icons==='object'&&!Array.isArray(raw.icons))?Object.fromEntries(Object.entries(raw.icons).filter(([k,v])=>typeof v==='string').map(([k,v])=>[k,v.slice(0,20)])):{}};if(!store())return;activeCat='Todas';filter='all';search='';$('#searchInput').value='';closeModal();render();toast('Respaldo importado')}catch{toast('Archivo no válido')}};
     }
@@ -305,9 +319,13 @@ body::before{inset:67px 0 0;background-size:36px 36px;opacity:.5}
     $('#categoryGrid').onclick=e=>{const b=e.target.closest('[data-cat]');if(b)setCategory(b.dataset.cat)};
     $('#quickFilters').onclick=e=>{const b=e.target.closest('[data-filter]');if(b){filter=b.dataset.filter;render()}};
     $('#sortBy').onchange=e=>{sort=e.target.value;render()};
-    $('#appGrid').addEventListener('click',e=>{const fav=e.target.closest('[data-fav]'),edit=e.target.closest('[data-edit]');if(fav){const a=data.apps.find(p=>String(p.id)===fav.dataset.fav);if(a){a.favorite=!a.favorite;store();render()}}else if(edit)openAppEditor(edit.dataset.edit);else if(e.target.id==='emptyAdd')openAppEditor();else {const link=e.target.closest('[data-open]');if(link){const a=data.apps.find(p=>String(p.id)===link.dataset.open);if(a){a.lastOpened=Date.now();store()}}}});
+    $('#appGrid').addEventListener('click',e=>{const fav=e.target.closest('[data-fav]'),edit=e.target.closest('[data-edit]');if(fav){if(!requireEdit())return;const a=data.apps.find(p=>String(p.id)===fav.dataset.fav);if(a){a.favorite=!a.favorite;store();render()}}else if(edit){if(requireEdit())openAppEditor(edit.dataset.edit);}else if(e.target.id==='emptyAdd'){if(requireEdit())openAppEditor();}else {const link=e.target.closest('[data-open]');if(link){const a=data.apps.find(p=>String(p.id)===link.dataset.open);if(a){a.lastOpened=Date.now();store()}}}});
     $('#appGrid').addEventListener('error',e=>{if(e.target.matches('.cover img'))e.target.remove()},true);
-    document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();$('#searchInput').focus();$('#searchInput').select()}});
+    document.addEventListener('keydown',e=>{
+      if((e.ctrlKey||e.metaKey)&&!e.altKey&&!e.shiftKey&&e.key.toLowerCase()==='o'){
+        e.preventDefault();e.stopImmediatePropagation();if(!e.repeat)toggleEdit();return;
+      }
+      if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();$('#searchInput').focus();$('#searchInput').select()}});
     window.addEventListener('storage',e=>{if(e.key===KEY){data=load();if(activeCat!=='Todas'&&!data.categories.includes(activeCat))activeCat='Todas';render()}});
     render();
   })();
