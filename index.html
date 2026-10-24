@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#ffffff">
-  <title>KEVIN OS | Application Hub v3.3</title>
+  <title>KEVIN OS | Application Hub v3.4</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -192,10 +192,11 @@ body.edit-mode .edit-status{display:inline-flex}
         <kbd>Ctrl K</kbd>
       </label>
       <div class="top-actions">
-        <span class="edit-status" id="editStatus" aria-live="polite" title="Modo edición habilitado"><span class="edit-status-label">EDICIÓN ACTIVADA</span><span class="edit-status-label" style="opacity:.6">· Ctrl+O</span></span>
-        <button type="button" class="btn" id="newCategoryBtn" data-admin-only aria-label="Nueva categoría"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><span class="desktop-label">Categoría</span></button>
-        <button type="button" class="btn primary" id="newAppBtn" data-admin-only aria-label="Nueva web"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><span class="desktop-label">Nueva web</span></button>
-        <button type="button" class="icon-btn" id="backupBtn" data-admin-only title="Respaldo de datos" aria-label="Respaldo de datos"><svg viewBox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 17v3h14v-3"/></svg></button>
+        <button type="button" class="btn primary" id="uploadOnce" data-admin-only>↑ Importar 18 webs</button>
+        <span class="edit-status" id="editStatus" aria-live="polite" title="Modo edición habilitado"><span class="edit-status-label">IMPORTACIÓN HABILITADA</span><span class="edit-status-label" style="opacity:.6">· Ctrl+O</span></span>
+        <button type="button" class="btn" id="newCategoryBtn" data-admin-only style="display:none!important" aria-label="Nueva categoría"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><span class="desktop-label">Categoría</span></button>
+        <button type="button" class="btn primary" id="newAppBtn" data-admin-only style="display:none!important" aria-label="Nueva web"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><span class="desktop-label">Nueva web</span></button>
+        <button type="button" class="icon-btn" id="backupBtn" data-admin-only style="display:none!important" title="Respaldo de datos" aria-label="Respaldo de datos"><svg viewBox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 17v3h14v-3"/></svg></button>
       </div>
     </div>
   </header>
@@ -203,7 +204,7 @@ body.edit-mode .edit-status{display:inline-flex}
     <section aria-labelledby="catsHeading">
       <div class="section-head">
         <div class="heading-side"><h1 id="catsHeading">Categorías</h1><span class="count" id="catCount">0</span></div>
-        <button class="section-action" id="manageCategories" data-admin-only type="button">Administrar <svg viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg></button>
+        <button class="section-action" id="manageCategories" data-admin-only style="display:none!important" type="button">Administrar <svg viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg></button>
       </div>
       <div class="category-grid" id="categoryGrid"></div>
     </section>
@@ -220,11 +221,29 @@ body.edit-mode .edit-status{display:inline-flex}
   </main>
   <div id="modalRoot"></div>
   <div class="toast hidden" id="toast" role="status" aria-live="polite"></div>
-  <script>
+  <script type="module">
+  import {initializeApp} from 'https://www.gstatic.com/firebasejs/13.0.0/firebase-app.js';
+  import {getFirestore,doc,onSnapshot,setDoc,serverTimestamp} from 'https://www.gstatic.com/firebasejs/13.0.0/firebase-firestore.js';
+  
   (()=>{
     'use strict';
+    const FIREBASE_CONFIG = {
+      apiKey: 'AIzaSyCnyG9HkvBd-KrteKrd_YZdFnb8npL1jq8',
+      authDomain: 'menu-76250.firebaseapp.com',
+      projectId: 'menu-76250',
+      storageBucket: 'menu-76250.firebasestorage.app',
+      messagingSenderId: '118188143180',
+      appId: '1:118188143180:web:2b8f01f80facc43fb17ae9'
+    };
+
     const KEY='kevin-os-workspace-v1';
-    const initialCategories=['Oriflame','PuntoFarma','Logística','Finanzas','Personal'];
+    const OPENED_KEY='kevin-os-recent-opened';
+    const CLOUD_CONFIGURED = Boolean(FIREBASE_CONFIG.apiKey && !FIREBASE_CONFIG.apiKey.startsWith('PEGA_AQUI_') && FIREBASE_CONFIG.projectId && !FIREBASE_CONFIG.projectId.startsWith('PEGA_AQUI_'));
+    let cloudRef, unsubscribeCloud, cloudReady=false, cloudExists=false;
+    let savingTimer=null, lastLocalWrite=0;
+    let opened={};try{opened=JSON.parse(localStorage.getItem(OPENED_KEY))||{}}catch{}
+
+    const initialCategories=['Logística','Personal','Distribución'];
     
     const svg={star:'<svg viewBox="0 0 24 24"><path d="m12 2.8 2.87 5.87 6.48.95-4.68 4.57 1.11 6.45L12 17.6l-5.78 3.04 1.11-6.45-4.68-4.57 6.48-.95L12 2.8z"/></svg>',edit:'<svg viewBox="0 0 24 24"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L9.5 16.5l-4 1 1-4z"/></svg>',arrow:'<svg viewBox="0 0 24 24"><path d="M5 19 19 5M7 5h12v12"/></svg>',close:'<svg viewBox="0 0 24 24"><path d="M5 5l14 14M19 5 5 19"/></svg>',plus:'<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>',trash:'<svg viewBox="0 0 24 24"><path d="M4 7h16M10 3h4m-8 4 1 14h10l1-14M10 11v6m4-6v6"/></svg>'};
     const $=s=>document.querySelector(s);
@@ -234,17 +253,49 @@ body.edit-mode .edit-status{display:inline-flex}
     const safeHttp=s=>validUrl(s)?s:'';
     const uid=()=>globalThis.crypto?.randomUUID?.()||String(Date.now())+'-'+Math.random().toString(36).slice(2);
     function load(){try{const o=JSON.parse(localStorage.getItem(KEY));if(o&&Array.isArray(o.categories)&&Array.isArray(o.apps))return {categories:o.categories.filter(c=>typeof c==='string'),apps:o.apps.filter(a=>a&&typeof a==='object'),icons:(o.icons&&typeof o.icons==='object'&&!Array.isArray(o.icons))?o.icons:{}}}catch{}return {categories:[...initialCategories],apps:[],icons:{}}}
-    let data=load();let activeCat='Todas',filter='all',search='',sort='recent',toastTimeout;
-    let editMode=false; // No se guarda: cada nueva apertura comienza en modo consulta.
-    function requireEdit(){return editMode;}
-    function toggleEdit(){editMode=!editMode;document.body.classList.toggle('edit-mode',editMode);if(!editMode)closeModal();render();toast(editMode?'Edición habilitada':'Edición desactivada')}
-
-    function store(){try{localStorage.setItem(KEY,JSON.stringify(data));return true}catch{toast('No se pudo guardar en este navegador');return false}}
+    const originalLocal=load();
+    let data=originalLocal;let activeCat='Todas',filter='all',search='',sort='recent',toastTimeout;
+    let editMode=false;
+    function requireEdit(){return false;}
+    function editOff(){editMode=false;document.body.classList.remove('edit-mode');closeModal();render()}
+    async function toggleEdit(){editMode=!editMode;document.body.classList.toggle('edit-mode',editMode);closeModal();render();}
+    function store(){
+      if(!requireEdit()){toast('Inicia sesión como administrador');return false}
+      try{localStorage.setItem(KEY,JSON.stringify(data))}catch{}
+      clearTimeout(savingTimer);
+      lastLocalWrite=Date.now();
+      savingTimer=setTimeout(async()=>{
+        savingTimer=null;
+        try{await setDoc(cloudRef,{categories:data.categories,apps:data.apps,icons:data.icons,updatedAt:serverTimestamp()});cloudExists=true;}
+        catch(e){toast(e?.code==='permission-denied'?'Sin permiso para guardar en Firebase':'No se pudo guardar en Firebase');console.error(e)}
+      },450);
+      return true;
+    }
+    function initCloud(){
+      if(!CLOUD_CONFIGURED)return;
+      try{
+        const firebaseApp=initializeApp(FIREBASE_CONFIG);
+        const db=getFirestore(firebaseApp);
+        cloudRef=doc(db,'kevin_os','catalog');
+        unsubscribeCloud=onSnapshot(cloudRef,snap=>{
+          cloudReady=true;cloudExists=snap.exists(); if(!cloudExists) toast("Catálogo aún no cargado en Firebase");
+          // Las escrituras del administrador ya tienen su copia local.
+          if(savingTimer)return;
+          const remote=snap.exists()?snap.data():null;
+          data=remote&&Array.isArray(remote.apps)&&Array.isArray(remote.categories)?
+            {apps:remote.apps,categories:remote.categories,icons:remote.icons||{}}:
+            {apps:[],categories:[...initialCategories],icons:{}};
+          if(activeCat!=='Todas'&&!data.categories.includes(activeCat))activeCat='Todas';
+          render();
+          if(snap.exists()){try{localStorage.setItem(KEY,JSON.stringify(data))}catch{}}
+        },e=>{cloudReady=false;toast(e?.code==='permission-denied'?'Lectura bloqueada por reglas de Firebase':'No se pudo conectar a Firebase');console.error(e)});
+      }catch(e){console.error(e);toast('Configuración Firebase incorrecta')}
+    }
     function toast(message){const el=$('#toast');el.textContent=message;el.classList.remove('hidden');clearTimeout(toastTimeout);toastTimeout=setTimeout(()=>el.classList.add('hidden'),2600)}
     function catIcon(c){return Object.hasOwn(data.icons,c)?String(data.icons[c]??''):''}
     function countOf(c){return c==='Todas'?data.apps.length:data.apps.filter(a=>a.category===c).length}
     function viewApps(){let list=data.apps.filter(a=>(activeCat==='Todas'||a.category===activeCat)&&(filter!=='favorites'||a.favorite)&&norm([a.name,a.description,a.category,a.url].join(' ')).includes(norm(search)));
-      if(sort==='opened')list.sort((a,b)=>(Number(b.lastOpened)||0)-(Number(a.lastOpened)||0));
+      if(sort==='opened')list.sort((a,b)=>(Number(opened[b.id])||0)-(Number(opened[a.id])||0));
       if(sort==='name')list.sort((a,b)=>String(a.name).localeCompare(String(b.name),'es'));
       if(sort==='category')list.sort((a,b)=>String(a.category).localeCompare(String(b.category),'es')||String(a.name).localeCompare(String(b.name),'es'));
       return list}
@@ -257,8 +308,8 @@ body.edit-mode .edit-status{display:inline-flex}
         const src=safeHttp(a.image||'');const emoji=String(a.emoji??'').trim();const abbr=String(a.name||'W').trim().split(/\s+/).slice(0,2).map(x=>x[0]||'').join('').toUpperCase();
         return `<article class="app-card" data-id="${esc(a.id)}">
           <div class="cover"><i class="cover-corner" aria-hidden="true"></i>${src?`<img loading="lazy" decoding="async" alt="" src="${esc(src)}">`:''}${emoji?`<span class="cover-emoji">${esc(emoji)}</span>`:`<span class="cover-monogram" aria-hidden="true">${esc(abbr)}</span>`}<span class="cover-open">ABRIR ${svg.arrow}</span></div>
-          ${editMode?`<button class="card-fav ${a.favorite?'on':''}" type="button" data-fav="${esc(a.id)}" aria-label="${a.favorite?'Quitar de favoritos':'Agregar a favoritos'}" title="Favorito">${svg.star}</button>`:''}
-          <div class="card-info"><div class="card-meta-line"><div class="card-category">${esc(a.category||'Sin categoría')}</div>${editMode?`<button type="button" class="card-edit" data-edit="${esc(a.id)}" aria-label="Editar ${esc(a.name)}" title="Editar aplicación">${svg.edit}</button>`:''}</div><h3 class="card-title" title="${esc(a.name)}">${esc(a.name)}</h3><div class="card-desc" title="${esc(a.description||'')}">${esc(a.description||'')}</div></div>
+          ${false?`<button class="card-fav ${a.favorite?'on':''}" type="button" data-fav="${esc(a.id)}" aria-label="${a.favorite?'Quitar de favoritos':'Agregar a favoritos'}" title="Favorito">${svg.star}</button>`:''}
+          <div class="card-info"><div class="card-meta-line"><div class="card-category">${esc(a.category||'Sin categoría')}</div>${false?`<button type="button" class="card-edit" data-edit="${esc(a.id)}" aria-label="Editar ${esc(a.name)}" title="Editar aplicación">${svg.edit}</button>`:''}</div><h3 class="card-title" title="${esc(a.name)}">${esc(a.name)}</h3><div class="card-desc" title="${esc(a.description||'')}">${esc(a.description||'')}</div></div>
           <a class="card-launch" data-open="${esc(a.id)}" href="${esc(a.url)}" target="_blank" rel="noopener noreferrer" aria-label="Abrir ${esc(a.name)} en otra pestaña"></a>
           </article>`}).join(''):
         `<div class="empty"><div class="empty-symbol">${search?'⌕':'▦'}</div><b>${search?'Sin resultados':filter==='favorites'?'No hay favoritos':'No hay aplicaciones'}</b>${editMode&&!search&&filter!=='favorites'?'<button class="btn primary" id="emptyAdd" type="button">＋ Nueva web</button>':''}</div>`;
@@ -310,24 +361,48 @@ body.edit-mode .edit-status{display:inline-flex}
       bindEmojiClear();$('#backCats').onclick=categoryManager;
       $('#editCatForm').onsubmit=e=>{e.preventDefault();const next=$('#editCatName').value.trim(),emoji=$('#editCatIcon').value.trim();if(!next)return;if((norm(next)!==norm(old)&&data.categories.some(c=>norm(c)===norm(next)))||norm(next)==='todas'){toast('La categoría ya existe');return}data.categories=data.categories.map(c=>c===old?next:c);data.apps.forEach(a=>{if(a.category===old)a.category=next});if(activeCat===old)activeCat=next;delete data.icons[old];data.icons[next]=emoji;if(!store())return;categoryManager();render();toast('Categoría actualizada')};
     }
-    function backupManager(){if(!requireEdit())return;showModal('Respaldo de datos',`<div class="backup-grid"><div class="backup-option"><b>Exportar datos</b><button type="button" id="exportBtn" class="btn primary">Exportar JSON</button></div><div class="backup-option"><b>Importar datos</b><input type="file" id="importFile" accept=".json,application/json"></div></div>`);
+    function backupManager(){if(!requireEdit())return;showModal('Respaldo de datos',`<div class="backup-grid"><div class="backup-option"><b>Exportar datos</b><button type="button" id="exportBtn" class="btn primary">Exportar JSON</button></div><div class="backup-option"><b>Importar datos</b><input type="file" id="importFile" accept=".json,application/json"></div>${!cloudExists&&originalLocal.apps.length?'<div class="backup-option"><b>Publicar webs guardadas en este navegador</b><button type="button" id="migrateBtn" class="btn primary">Publicar '+originalLocal.apps.length+' webs</button></div>':''}</div>`);
+      if($('#migrateBtn'))$('#migrateBtn').onclick=()=>{if(!confirm('¿Publicar tus aplicaciones actuales en Firebase? Se mostrarán a todos los visitantes.'))return;data=structuredClone(originalLocal);store();closeModal();render();toast('Publicando aplicaciones')};
       $('#exportBtn').onclick=()=>{const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='kevin-os-respaldo-'+new Date().toISOString().slice(0,10)+'.json';document.body.appendChild(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1200)};
       $('#importFile').onchange=async e=>{const f=e.target.files?.[0];if(!f)return;try{if(f.size>5_000_000)throw Error('Archivo muy grande');const raw=JSON.parse(await f.text());if(!raw||!Array.isArray(raw.apps)||!Array.isArray(raw.categories)||raw.apps.length>5000||raw.categories.length>500||!raw.categories.every(c=>typeof c==='string'&&c.trim().length>0&&c.length<=48)||!raw.apps.every(a=>a&&typeof a.name==='string'&&typeof a.url==='string'&&validUrl(a.url)&&typeof a.category==='string'))throw Error('Datos inválidos');if(!confirm('¿Reemplazar todas las webs y categorías por este respaldo?'))return;const categories=[...new Set(raw.categories)],apps=raw.apps.map(a=>({id:uid(),name:String(a.name).slice(0,100),url:a.url,description:String(a.description||'').slice(0,240),category:a.category,emoji:String(a.emoji??'').slice(0,20),image:safeHttp(a.image||''),favorite:!!a.favorite,lastOpened:Number(a.lastOpened)||0}));for(const a of apps)if(!categories.includes(a.category))categories.push(a.category);data={categories:categories.length?categories:['Personal'],apps,icons:(raw.icons&&typeof raw.icons==='object'&&!Array.isArray(raw.icons))?Object.fromEntries(Object.entries(raw.icons).filter(([k,v])=>typeof v==='string').map(([k,v])=>[k,v.slice(0,20)])):{}};if(!store())return;activeCat='Todas';filter='all';search='';$('#searchInput').value='';closeModal();render();toast('Respaldo importado')}catch{toast('Archivo no válido')}};
     }
+    $('#uploadOnce').onclick=()=>{
+      if(cloudExists){toast('Ya existe un catálogo en Firebase; no se sobrescribirá');return}
+      showModal('Publicar aplicaciones en Firebase',`<div class="form"><p style="font-size:13px;color:#555e6a;line-height:1.7">Selecciona tu respaldo JSON. Se publicará una sola vez; no se reemplazará ningún catálogo existente.</p><div class="field"><label for="oneTimeBackup">Respaldo de KEVIN OS (.json)</label><input type="file" id="oneTimeBackup" accept=".json,application/json"></div><button type="button" id="publishOnce" class="btn primary">Publicar catálogo</button><div id="publishInfo" style="font-size:12px;color:#6d7684"></div></div>`);
+      $('#publishOnce').onclick=async()=>{
+        const file=$('#oneTimeBackup').files?.[0], info=$('#publishInfo');
+        if(!file){info.textContent='Selecciona tu archivo JSON';return}
+        if(!cloudReady){info.textContent='Firebase todavía no está disponible';return}
+        if(cloudExists){info.textContent='Ya existe un catálogo: importación cancelada';return}
+        try{
+          if(file.size>1000000)throw Error('Archivo demasiado grande');
+          const payload=JSON.parse(await file.text());
+          if(!Array.isArray(payload.apps)||payload.apps.length!==18||!Array.isArray(payload.categories)||payload.categories.length!==3)throw Error('Este importador espera el respaldo de 18 webs y 3 categorías');
+          if(!payload.apps.every(a=>a&&typeof a.name==='string'&&validUrl(a.url)&&typeof a.category==='string'))throw Error('Respaldo con enlaces inválidos');
+          const ids=new Set(payload.apps.map(a=>a.id));if(ids.size!==18)throw Error('Hay aplicaciones duplicadas');
+          if(!confirm('¿Publicar 18 webs y 3 categorías para todos los visitantes?'))return;
+          $('#publishOnce').disabled=true;info.textContent='Publicando en Firebase…';
+          await setDoc(cloudRef,{apps:payload.apps,categories:payload.categories,icons:payload.icons||{},version:1,updatedAt:serverTimestamp()});
+          info.textContent='Publicado correctamente. Tus 18 webs están en Firebase.';
+          toast('18 aplicaciones publicadas');
+          setTimeout(()=>{closeModal();editOff()},1400);
+        }catch(err){console.error(err);info.textContent=err?.code==='permission-denied'?'Permiso denegado. Verifica las reglas temporales de importación.':(err?.message||'No se pudo importar');$('#publishOnce').disabled=false}
+      };
+    };
     $('#newAppBtn').onclick=()=>openAppEditor();$('#newCategoryBtn').onclick=categoryManager;$('#manageCategories').onclick=categoryManager;$('#backupBtn').onclick=backupManager;
     $('#searchInput').oninput=e=>{search=e.target.value.trim();render()};
     $('#categoryGrid').onclick=e=>{const b=e.target.closest('[data-cat]');if(b)setCategory(b.dataset.cat)};
     $('#quickFilters').onclick=e=>{const b=e.target.closest('[data-filter]');if(b){filter=b.dataset.filter;render()}};
     $('#sortBy').onchange=e=>{sort=e.target.value;render()};
-    $('#appGrid').addEventListener('click',e=>{const fav=e.target.closest('[data-fav]'),edit=e.target.closest('[data-edit]');if(fav){if(!requireEdit())return;const a=data.apps.find(p=>String(p.id)===fav.dataset.fav);if(a){a.favorite=!a.favorite;store();render()}}else if(edit){if(requireEdit())openAppEditor(edit.dataset.edit);}else if(e.target.id==='emptyAdd'){if(requireEdit())openAppEditor();}else {const link=e.target.closest('[data-open]');if(link){const a=data.apps.find(p=>String(p.id)===link.dataset.open);if(a){a.lastOpened=Date.now();store()}}}});
+    $('#appGrid').addEventListener('click',e=>{const fav=e.target.closest('[data-fav]'),edit=e.target.closest('[data-edit]');if(fav){if(!requireEdit())return;const a=data.apps.find(p=>String(p.id)===fav.dataset.fav);if(a){a.favorite=!a.favorite;store();render()}}else if(edit){if(requireEdit())openAppEditor(edit.dataset.edit);}else if(e.target.id==='emptyAdd'){if(requireEdit())openAppEditor();}else {const link=e.target.closest('[data-open]');if(link){const a=data.apps.find(p=>String(p.id)===link.dataset.open);if(a){opened[a.id]=Date.now();try{localStorage.setItem(OPENED_KEY,JSON.stringify(opened))}catch{}}}}});
     $('#appGrid').addEventListener('error',e=>{if(e.target.matches('.cover img'))e.target.remove()},true);
     document.addEventListener('keydown',e=>{
       if((e.ctrlKey||e.metaKey)&&!e.altKey&&!e.shiftKey&&e.key.toLowerCase()==='o'){
         e.preventDefault();e.stopImmediatePropagation();if(!e.repeat)toggleEdit();return;
       }
       if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='k'){e.preventDefault();$('#searchInput').focus();$('#searchInput').select()}});
-    window.addEventListener('storage',e=>{if(e.key===KEY){data=load();if(activeCat!=='Todas'&&!data.categories.includes(activeCat))activeCat='Todas';render()}});
-    render();
+    window.addEventListener('storage',e=>{if(e.key===OPENED_KEY){try{opened=JSON.parse(e.newValue)||{}}catch{opened={}};if(sort==='opened')render()}});
+    render();initCloud();
   })();
   </script>
 </body>
