@@ -192,11 +192,11 @@ body.edit-mode .edit-status{display:inline-flex}
         <kbd>Ctrl K</kbd>
       </label>
       <div class="top-actions">
-        <button type="button" class="btn primary" id="uploadOnce" data-admin-only>↑ Importar 18 webs</button>
-        <span class="edit-status" id="editStatus" aria-live="polite" title="Modo edición habilitado"><span class="edit-status-label">IMPORTACIÓN HABILITADA</span><span class="edit-status-label" style="opacity:.6">· Ctrl+O</span></span>
-        <button type="button" class="btn" id="newCategoryBtn" data-admin-only style="display:none!important" aria-label="Nueva categoría"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><span class="desktop-label">Categoría</span></button>
-        <button type="button" class="btn primary" id="newAppBtn" data-admin-only style="display:none!important" aria-label="Nueva web"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><span class="desktop-label">Nueva web</span></button>
-        <button type="button" class="icon-btn" id="backupBtn" data-admin-only style="display:none!important" title="Respaldo de datos" aria-label="Respaldo de datos"><svg viewBox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 17v3h14v-3"/></svg></button>
+        <button type="button" class="btn primary" id="uploadOnce" data-admin-only>↑ Importar respaldo</button>
+        <span class="edit-status" id="editStatus" aria-live="polite" title="Modo edición habilitado"><span class="edit-status-label">MODO EDICIÓN</span><span class="edit-status-label" style="opacity:.6">· Ctrl+O</span></span>
+        <button type="button" class="btn" id="newCategoryBtn" data-admin-only aria-label="Nueva categoría"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><span class="desktop-label">Categoría</span></button>
+        <button type="button" class="btn primary" id="newAppBtn" data-admin-only aria-label="Nueva web"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg><span class="desktop-label">Nueva web</span></button>
+        <button type="button" class="icon-btn" id="backupBtn" data-admin-only title="Respaldo de datos" aria-label="Respaldo de datos"><svg viewBox="0 0 24 24"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 17v3h14v-3"/></svg></button>
       </div>
     </div>
   </header>
@@ -204,7 +204,7 @@ body.edit-mode .edit-status{display:inline-flex}
     <section aria-labelledby="catsHeading">
       <div class="section-head">
         <div class="heading-side"><h1 id="catsHeading">Categorías</h1><span class="count" id="catCount">0</span></div>
-        <button class="section-action" id="manageCategories" data-admin-only style="display:none!important" type="button">Administrar <svg viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg></button>
+        <button class="section-action" id="manageCategories" data-admin-only type="button">Administrar <svg viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg></button>
       </div>
       <div class="category-grid" id="categoryGrid"></div>
     </section>
@@ -256,18 +256,18 @@ body.edit-mode .edit-status{display:inline-flex}
     const originalLocal=load();
     let data=originalLocal;let activeCat='Todas',filter='all',search='',sort='recent',toastTimeout;
     let editMode=false;
-    function requireEdit(){return false;}
+    function requireEdit(){if(!editMode){toast("Activa la edición con Ctrl + O");return false;}if(!cloudReady){toast("Esperando conexión a Firebase");return false;}return true;}
     function editOff(){editMode=false;document.body.classList.remove('edit-mode');closeModal();render()}
     async function toggleEdit(){editMode=!editMode;document.body.classList.toggle('edit-mode',editMode);closeModal();render();}
     function store(){
-      if(!requireEdit()){toast('Inicia sesión como administrador');return false}
+      if(!requireEdit())return false
       try{localStorage.setItem(KEY,JSON.stringify(data))}catch{}
       clearTimeout(savingTimer);
       lastLocalWrite=Date.now();
       savingTimer=setTimeout(async()=>{
         savingTimer=null;
         try{await setDoc(cloudRef,{categories:data.categories,apps:data.apps,icons:data.icons,updatedAt:serverTimestamp()});cloudExists=true;}
-        catch(e){toast(e?.code==='permission-denied'?'Sin permiso para guardar en Firebase':'No se pudo guardar en Firebase');console.error(e)}
+        catch(e){toast(e?.code==='permission-denied'?'Firestore bloquea las ediciones: revisa las reglas':'No se pudo guardar en Firebase');console.error(e)}
       },450);
       return true;
     }
@@ -278,9 +278,9 @@ body.edit-mode .edit-status{display:inline-flex}
         const db=getFirestore(firebaseApp);
         cloudRef=doc(db,'kevin_os','catalog');
         unsubscribeCloud=onSnapshot(cloudRef,snap=>{
-          cloudReady=true;cloudExists=snap.exists(); if(!cloudExists) toast("Catálogo aún no cargado en Firebase");
+          cloudReady=true;cloudExists=snap.exists(); if(!cloudExists) toast("Aún no hay aplicaciones en Firebase");
           // Las escrituras del administrador ya tienen su copia local.
-          if(savingTimer)return;
+          if(savingTimer || Date.now()-lastLocalWrite<1400)return;
           const remote=snap.exists()?snap.data():null;
           data=remote&&Array.isArray(remote.apps)&&Array.isArray(remote.categories)?
             {apps:remote.apps,categories:remote.categories,icons:remote.icons||{}}:
@@ -308,8 +308,8 @@ body.edit-mode .edit-status{display:inline-flex}
         const src=safeHttp(a.image||'');const emoji=String(a.emoji??'').trim();const abbr=String(a.name||'W').trim().split(/\s+/).slice(0,2).map(x=>x[0]||'').join('').toUpperCase();
         return `<article class="app-card" data-id="${esc(a.id)}">
           <div class="cover"><i class="cover-corner" aria-hidden="true"></i>${src?`<img loading="lazy" decoding="async" alt="" src="${esc(src)}">`:''}${emoji?`<span class="cover-emoji">${esc(emoji)}</span>`:`<span class="cover-monogram" aria-hidden="true">${esc(abbr)}</span>`}<span class="cover-open">ABRIR ${svg.arrow}</span></div>
-          ${false?`<button class="card-fav ${a.favorite?'on':''}" type="button" data-fav="${esc(a.id)}" aria-label="${a.favorite?'Quitar de favoritos':'Agregar a favoritos'}" title="Favorito">${svg.star}</button>`:''}
-          <div class="card-info"><div class="card-meta-line"><div class="card-category">${esc(a.category||'Sin categoría')}</div>${false?`<button type="button" class="card-edit" data-edit="${esc(a.id)}" aria-label="Editar ${esc(a.name)}" title="Editar aplicación">${svg.edit}</button>`:''}</div><h3 class="card-title" title="${esc(a.name)}">${esc(a.name)}</h3><div class="card-desc" title="${esc(a.description||'')}">${esc(a.description||'')}</div></div>
+          ${editMode?`<button class="card-fav ${a.favorite?'on':''}" type="button" data-fav="${esc(a.id)}" aria-label="${a.favorite?'Quitar de favoritos':'Agregar a favoritos'}" title="Favorito">${svg.star}</button>`:''}
+          <div class="card-info"><div class="card-meta-line"><div class="card-category">${esc(a.category||'Sin categoría')}</div>${editMode?`<button type="button" class="card-edit" data-edit="${esc(a.id)}" aria-label="Editar ${esc(a.name)}" title="Editar aplicación">${svg.edit}</button>`:''}</div><h3 class="card-title" title="${esc(a.name)}">${esc(a.name)}</h3><div class="card-desc" title="${esc(a.description||'')}">${esc(a.description||'')}</div></div>
           <a class="card-launch" data-open="${esc(a.id)}" href="${esc(a.url)}" target="_blank" rel="noopener noreferrer" aria-label="Abrir ${esc(a.name)} en otra pestaña"></a>
           </article>`}).join(''):
         `<div class="empty"><div class="empty-symbol">${search?'⌕':'▦'}</div><b>${search?'Sin resultados':filter==='favorites'?'No hay favoritos':'No hay aplicaciones'}</b>${editMode&&!search&&filter!=='favorites'?'<button class="btn primary" id="emptyAdd" type="button">＋ Nueva web</button>':''}</div>`;
@@ -364,11 +364,11 @@ body.edit-mode .edit-status{display:inline-flex}
     function backupManager(){if(!requireEdit())return;showModal('Respaldo de datos',`<div class="backup-grid"><div class="backup-option"><b>Exportar datos</b><button type="button" id="exportBtn" class="btn primary">Exportar JSON</button></div><div class="backup-option"><b>Importar datos</b><input type="file" id="importFile" accept=".json,application/json"></div>${!cloudExists&&originalLocal.apps.length?'<div class="backup-option"><b>Publicar webs guardadas en este navegador</b><button type="button" id="migrateBtn" class="btn primary">Publicar '+originalLocal.apps.length+' webs</button></div>':''}</div>`);
       if($('#migrateBtn'))$('#migrateBtn').onclick=()=>{if(!confirm('¿Publicar tus aplicaciones actuales en Firebase? Se mostrarán a todos los visitantes.'))return;data=structuredClone(originalLocal);store();closeModal();render();toast('Publicando aplicaciones')};
       $('#exportBtn').onclick=()=>{const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),link=document.createElement('a');link.href=url;link.download='kevin-os-respaldo-'+new Date().toISOString().slice(0,10)+'.json';document.body.appendChild(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1200)};
-      $('#importFile').onchange=async e=>{const f=e.target.files?.[0];if(!f)return;try{if(f.size>5_000_000)throw Error('Archivo muy grande');const raw=JSON.parse(await f.text());if(!raw||!Array.isArray(raw.apps)||!Array.isArray(raw.categories)||raw.apps.length>5000||raw.categories.length>500||!raw.categories.every(c=>typeof c==='string'&&c.trim().length>0&&c.length<=48)||!raw.apps.every(a=>a&&typeof a.name==='string'&&typeof a.url==='string'&&validUrl(a.url)&&typeof a.category==='string'))throw Error('Datos inválidos');if(!confirm('¿Reemplazar todas las webs y categorías por este respaldo?'))return;const categories=[...new Set(raw.categories)],apps=raw.apps.map(a=>({id:uid(),name:String(a.name).slice(0,100),url:a.url,description:String(a.description||'').slice(0,240),category:a.category,emoji:String(a.emoji??'').slice(0,20),image:safeHttp(a.image||''),favorite:!!a.favorite,lastOpened:Number(a.lastOpened)||0}));for(const a of apps)if(!categories.includes(a.category))categories.push(a.category);data={categories:categories.length?categories:['Personal'],apps,icons:(raw.icons&&typeof raw.icons==='object'&&!Array.isArray(raw.icons))?Object.fromEntries(Object.entries(raw.icons).filter(([k,v])=>typeof v==='string').map(([k,v])=>[k,v.slice(0,20)])):{}};if(!store())return;activeCat='Todas';filter='all';search='';$('#searchInput').value='';closeModal();render();toast('Respaldo importado')}catch{toast('Archivo no válido')}};
+      $('#importFile').onchange=async e=>{const f=e.target.files?.[0];if(!f)return;try{if(f.size>5_000_000)throw Error('Archivo muy grande');const raw=JSON.parse(await f.text());if(!raw||!Array.isArray(raw.apps)||!Array.isArray(raw.categories)||raw.apps.length>5000||raw.categories.length>500||!raw.categories.every(c=>typeof c==='string'&&c.trim().length>0&&c.length<=48)||!raw.apps.every(a=>a&&typeof a.name==='string'&&typeof a.url==='string'&&validUrl(a.url)&&typeof a.category==='string'))throw Error('Datos inválidos');if(!confirm('¿Reemplazar todas las webs y categorías por este respaldo?'))return;const categories=[...new Set(raw.categories)],apps=raw.apps.map(a=>({id:uid(),name:String(a.name).slice(0,100),url:a.url,description:String(a.description||'').slice(0,240),category:a.category,emoji:String(a.emoji??'').slice(0,20),image:safeHttp(a.image||''),favorite:!!a.favorite,lastOpened:Number(a.lastOpened)||0}));for(const a of apps)if(!categories.includes(a.category))categories.push(a.category);data={categories:categories.length?categories:['Personal'],apps,icons:(raw.icons&&typeof raw.icons==='object'&&!Array.isArray(raw.icons))?Object.fromEntries(Object.entries(raw.icons).filter(([k,v])=>typeof v==='string').map(([k,v])=>[k,v.slice(0,20)])):{}};if(!store())return;activeCat='Todas';filter='all';search='';$('#searchInput').value='';closeModal();render();toast('Importación enviada a Firebase')}catch{toast('Archivo no válido')}};
     }
     $('#uploadOnce').onclick=()=>{
       if(cloudExists){toast('Ya existe un catálogo en Firebase; no se sobrescribirá');return}
-      showModal('Publicar aplicaciones en Firebase',`<div class="form"><p style="font-size:13px;color:#555e6a;line-height:1.7">Selecciona tu respaldo JSON. Se publicará una sola vez; no se reemplazará ningún catálogo existente.</p><div class="field"><label for="oneTimeBackup">Respaldo de KEVIN OS (.json)</label><input type="file" id="oneTimeBackup" accept=".json,application/json"></div><button type="button" id="publishOnce" class="btn primary">Publicar catálogo</button><div id="publishInfo" style="font-size:12px;color:#6d7684"></div></div>`);
+      showModal('Publicar aplicaciones en Firebase',`<div class="form"><p style="font-size:13px;color:#555e6a;line-height:1.7">Selecciona tu respaldo JSON. Esta opción es para la primera importación. Para actualizar un catálogo existente, usa Respaldo de datos en el modo edición.</p><div class="field"><label for="oneTimeBackup">Respaldo de KEVIN OS (.json)</label><input type="file" id="oneTimeBackup" accept=".json,application/json"></div><button type="button" id="publishOnce" class="btn primary">Publicar catálogo</button><div id="publishInfo" style="font-size:12px;color:#6d7684"></div></div>`);
       $('#publishOnce').onclick=async()=>{
         const file=$('#oneTimeBackup').files?.[0], info=$('#publishInfo');
         if(!file){info.textContent='Selecciona tu archivo JSON';return}
@@ -377,14 +377,14 @@ body.edit-mode .edit-status{display:inline-flex}
         try{
           if(file.size>1000000)throw Error('Archivo demasiado grande');
           const payload=JSON.parse(await file.text());
-          if(!Array.isArray(payload.apps)||payload.apps.length!==18||!Array.isArray(payload.categories)||payload.categories.length!==3)throw Error('Este importador espera el respaldo de 18 webs y 3 categorías');
+          if(!Array.isArray(payload.apps)||!Array.isArray(payload.categories)||payload.apps.length>500||payload.categories.length>80)throw Error('Respaldo no válido');
           if(!payload.apps.every(a=>a&&typeof a.name==='string'&&validUrl(a.url)&&typeof a.category==='string'))throw Error('Respaldo con enlaces inválidos');
-          const ids=new Set(payload.apps.map(a=>a.id));if(ids.size!==18)throw Error('Hay aplicaciones duplicadas');
-          if(!confirm('¿Publicar 18 webs y 3 categorías para todos los visitantes?'))return;
+          const ids=new Set(payload.apps.map(a=>a.id));if(ids.size!==payload.apps.length)throw Error('Hay aplicaciones duplicadas');
+          if(!confirm('¿Publicar el catálogo para todos los visitantes?'))return;
           $('#publishOnce').disabled=true;info.textContent='Publicando en Firebase…';
           await setDoc(cloudRef,{apps:payload.apps,categories:payload.categories,icons:payload.icons||{},version:1,updatedAt:serverTimestamp()});
-          info.textContent='Publicado correctamente. Tus 18 webs están en Firebase.';
-          toast('18 aplicaciones publicadas');
+          info.textContent='Catálogo publicado correctamente en Firebase.';
+          toast('Aplicaciones publicadas');
           setTimeout(()=>{closeModal();editOff()},1400);
         }catch(err){console.error(err);info.textContent=err?.code==='permission-denied'?'Permiso denegado. Verifica las reglas temporales de importación.':(err?.message||'No se pudo importar');$('#publishOnce').disabled=false}
       };
